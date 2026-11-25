@@ -3,8 +3,12 @@ public class ThreeDFitter {
     static final double SLIDE_GAP_MM = 0.20;
 
     public static void main(String[] args) {
-        double nominalSizeMm = 10.0;
-        String fitType = "slide";
+        if (args.length != 2) {
+            System.out.println("Usage: java ThreeDFitter <size-mm> <fit-type>");
+            return;
+        }
+        double nominalSizeMm = Double.parseDouble(args[0]);
+        String fitType = args[1];
         double halfGap = SLIDE_GAP_MM / 2;
 
         double holeSizeMm = nominalSizeMm + halfGap;
