@@ -4,12 +4,26 @@ public class ThreeDFitter {
     static final double SNUG_GAP_MM = 0.10;
     static final double SLIDE_GAP_MM = 0.20;
     static final double LOOSE_GAP_MM = 0.40;
+
     public static void main(String[] args) {
         if (args.length != 2) {
             System.out.println("Usage: java ThreeDFitter <size-mm> <fit-type>");
             return;
         }
-        double nominalSizeMm = Double.parseDouble(args[0]);
+
+        double nominalSizeMm;
+        try {
+            nominalSizeMm = Double.parseDouble(args[0]);
+        } catch (NumberFormatException e) {
+            System.out.println("Size must be a number, got: " + args[0]);
+            return;
+        }
+
+        if (nominalSizeMm <= 0) {
+            System.out.println("Size must be greater than 0");
+            return;
+        }
+
         String fitType = args[1];
         double gapMm;
         if (fitType.equals("press")) {
@@ -23,6 +37,7 @@ public class ThreeDFitter {
         } else {
             System.out.println("Unknown fit type: " + fitType);
             return;
+
         }
         double halfGap = gapMm / 2;
         double holeSizeMm = nominalSizeMm + halfGap;
