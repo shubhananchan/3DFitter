@@ -13,47 +13,61 @@ public class ThreeDFitter {
         }
 
         double nominalSizeMm;
+        double gapMm;
         try {
-            nominalSizeMm = Double.parseDouble(args[0]);
-        } catch (NumberFormatException e) {
-            System.out.println("Size must be a number, got: " + args[0]);
+            nominalSizeMm = parseSize(args[0]);
+            gapMm = gapForFit(args[1]);
+        } catch (IllegalArgumentException e) {
+            System.out.println(e.getMessage());
             return;
+        }
+
+        String fitType = args[1].toLowerCase();
+        System.out.printf("3DFitter: %.3f mm, %s fit%n", nominalSizeMm, fitType);
+        System.out.printf("Hole: %.3f mm%n", holeSize(nominalSizeMm, gapMm));
+        System.out.printf("Peg:  %.3f mm%n", pegSize(nominalSizeMm, gapMm));
+    }
+
+    // Turns the size text into a positive, finite number, or throws with a message for the user.
+    static double parseSize(String sizeText) {
+        double sizeMm;
+        try {
+            sizeMm = Double.parseDouble(sizeText);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Size must be a number, got: " + sizeText);
         }
 
         // parseDouble accepts "NaN" and "Infinity", which the <= 0 check misses.
-        if (!Double.isFinite(nominalSizeMm)) {
-            System.out.println("Size must be a finite number, got: " + args[0]);
-            return;
+        if (!Double.isFinite(sizeMm)) {
+            throw new IllegalArgumentException("Size must be a finite number, got: " + sizeText);
         }
-
-        if (nominalSizeMm <= 0) {
-            System.out.println("Size must be greater than 0");
-            return;
+        if (sizeMm <= 0) {
+            throw new IllegalArgumentException("Size must be greater than 0");
         }
+        return sizeMm;
+    }
 
-        // Lowercase so "SLIDE" and "Slide" work the same as "slide".
-        String fitType = args[1].toLowerCase();
-        double gapMm;
-        if (fitType.equals("press")) {
-            gapMm = PRESS_GAP_MM;
-        } else if (fitType.equals("snug")) {
-            gapMm = SNUG_GAP_MM;
-        } else if (fitType.equals("slide")) {
-            gapMm = SLIDE_GAP_MM;
-        } else if (fitType.equals("loose")) {
-            gapMm = LOOSE_GAP_MM;
-        } else {
-            System.out.println("Unknown fit type: " + args[1] + " (use press, snug, slide or loose)");
-            return;
+    // Returns the total gap for a fit type. Lowercased so "SLIDE" works the same as "slide".
+    static double gapForFit(String fitType) {
+        String fit = fitType.toLowerCase();
+        if (fit.equals("press")) {
+            return PRESS_GAP_MM;
+        } else if (fit.equals("snug")) {
+            return SNUG_GAP_MM;
+        } else if (fit.equals("slide")) {
+            return SLIDE_GAP_MM;
+        } else if (fit.equals("loose")) {
+            return LOOSE_GAP_MM;
         }
+        throw new IllegalArgumentException("Unknown fit type: " + fitType + " (use press, snug, slide or loose)");
+    }
 
-        double halfGap = gapMm / 2;
-        double holeSizeMm = nominalSizeMm + halfGap;
-        double pegSizeMm = nominalSizeMm - halfGap;
+    // The gap is split evenly, so the hole grows by half and the peg shrinks by half.
+    static double holeSize(double nominalSizeMm, double gapMm) {
+        return nominalSizeMm + gapMm / 2;
+    }
 
-        // 3 decimals so the 0.025 mm half-gap of a press fit is not rounded away.
-        System.out.printf("3DFitter: %.3f mm, %s fit%n", nominalSizeMm, fitType);
-        System.out.printf("Hole: %.3f mm%n", holeSizeMm);
-        System.out.printf("Peg:  %.3f mm%n", pegSizeMm);
+    static double pegSize(double nominalSizeMm, double gapMm) {
+        return nominalSizeMm - gapMm / 2;
     }
 }
