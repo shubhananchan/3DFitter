@@ -1,3 +1,7 @@
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Properties;
+
 public class ThreeDFitter {
     // Total clearance between hole and peg, in mm. Starting values, tuned later with test prints.
     static final double PRESS_GAP_MM = 0.05;
@@ -5,10 +9,16 @@ public class ThreeDFitter {
     static final double SLIDE_GAP_MM = 0.20;
     static final double LOOSE_GAP_MM = 0.40;
 
+    static final String OFFSET_FILE = "printer_offset.properties";
+
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equalsIgnoreCase("calibrate")) {
+            runCalibration(args);
+            return;
+        }
+
         if (args.length != 2) {
-            System.out.println("Usage: java ThreeDFitter <size-mm> <fit-type>");
-            System.out.println("Fit types: press, snug, slide, loose");
+            printUsage();
             return;
         }
 
@@ -69,5 +79,52 @@ public class ThreeDFitter {
 
     static double pegSize(double nominalSizeMm, double gapMm) {
         return nominalSizeMm - gapMm / 2;
+    }
+
+    static void printUsage() {
+        System.out.println("Usage: java ThreeDFitter <size-mm> <fit-type>");
+        System.out.println("       java ThreeDFitter calibrate <planned-mm> <measured-mm>");
+        System.out.println("Fit types: press, snug, slide, loose");
+    }
+
+    // Calibration mode: compare a test hole's CAD size with its caliper measurement and save the offset.
+    static void runCalibration(String[] args) {
+        if (args.length != 3) {
+            printUsage();
+            return;
+        }
+
+        double plannedMm;
+        double measuredMm;
+        try {
+            plannedMm = parseSize(args[1]);
+            measuredMm = parseSize(args[2]);
+        } catch (IllegalArgumentException e) {
+            System.out.println(e.getMessage());
+            return;
+        }
+
+        double offsetMm = calculateOffset(plannedMm, measuredMm);
+        try {
+            saveOffset(offsetMm);
+        } catch (IOException e) {
+            System.out.println("Could not save " + OFFSET_FILE + ": " + e.getMessage());
+            return;
+        }
+        System.out.printf("Saved offset %.3f mm to %s%n", offsetMm, OFFSET_FILE);
+    }
+
+    // Negative means holes print smaller than drawn (10.00 drawn, 9.85 measured gives -0.15).
+    // Rounded to 0.001 mm because 9.85 - 10.00 in doubles gives -0.15000000000000036.
+    static double calculateOffset(double plannedMm, double measuredMm) {
+        return Math.round((measuredMm - plannedMm) * 1000) / 1000.0;
+    }
+
+    static void saveOffset(double offsetMm) throws IOException {
+        Properties settings = new Properties();
+        settings.setProperty("offset", String.valueOf(offsetMm));
+        try (FileWriter writer = new FileWriter(OFFSET_FILE)) {
+            settings.store(writer, "3DFitter printer offset in mm (measured minus planned)");
+        }
     }
 }
