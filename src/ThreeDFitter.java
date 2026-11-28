@@ -1,3 +1,5 @@
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Properties;
@@ -32,10 +34,21 @@ public class ThreeDFitter {
             return;
         }
 
+        double offsetMm;
+        try {
+            offsetMm = loadOffset();
+        } catch (FileNotFoundException e) {
+            System.out.println("No " + OFFSET_FILE + " found, using offset 0. Run calibrate first for printer-corrected sizes.");
+            offsetMm = 0;
+        } catch (IOException | NumberFormatException e) {
+            System.out.println("Could not read " + OFFSET_FILE + ". Run calibrate again to rewrite it.");
+            return;
+        }
+
         String fitType = args[1].toLowerCase();
-        System.out.printf("3DFitter: %.3f mm, %s fit%n", nominalSizeMm, fitType);
-        System.out.printf("Hole: %.3f mm%n", holeSize(nominalSizeMm, gapMm));
-        System.out.printf("Peg:  %.3f mm%n", pegSize(nominalSizeMm, gapMm));
+        System.out.printf("3DFitter: %.3f mm, %s fit, printer offset %.3f mm%n", nominalSizeMm, fitType, offsetMm);
+        System.out.printf("Draw hole at: %.3f mm%n", cadHoleSize(holeSize(nominalSizeMm, gapMm), offsetMm));
+        System.out.printf("Draw peg at:  %.3f mm%n", cadPegSize(pegSize(nominalSizeMm, gapMm), offsetMm));
     }
 
     // Turns the size text into a positive, finite number, or throws with a message for the user.
@@ -79,6 +92,16 @@ public class ThreeDFitter {
 
     static double pegSize(double nominalSizeMm, double gapMm) {
         return nominalSizeMm - gapMm / 2;
+    }
+
+    // Holes print smaller by the offset, so draw them bigger to land on the target size.
+    static double cadHoleSize(double targetHoleMm, double offsetMm) {
+        return targetHoleMm - offsetMm;
+    }
+
+    // Assumes pegs print bigger by the same amount holes print smaller, so draw them smaller.
+    static double cadPegSize(double targetPegMm, double offsetMm) {
+        return targetPegMm + offsetMm;
     }
 
     static void printUsage() {
@@ -126,5 +149,18 @@ public class ThreeDFitter {
         try (FileWriter writer = new FileWriter(OFFSET_FILE)) {
             settings.store(writer, "3DFitter printer offset in mm (measured minus planned)");
         }
+    }
+
+    static double loadOffset() throws IOException {
+        Properties settings = new Properties();
+        try (FileReader reader = new FileReader(OFFSET_FILE)) {
+            settings.load(reader);
+        }
+        // A missing key becomes "" so parseDouble throws NumberFormatException instead of crashing.
+        double offsetMm = Double.parseDouble(settings.getProperty("offset", ""));
+        if (!Double.isFinite(offsetMm)) {
+            throw new NumberFormatException("offset is not a finite number");
+        }
+        return offsetMm;
     }
 }
