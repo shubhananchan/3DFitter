@@ -2,6 +2,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Properties;
 
 public class ThreeDFitter {
@@ -12,10 +13,22 @@ public class ThreeDFitter {
     static final double LOOSE_GAP_MM = 0.40;
 
     static final String OFFSET_FILE = "printer_offset.properties";
+    static final String PROFILE_FLAG = "--profile";
 
     public static void main(String[] args) {
+        // An optional "--profile <name>" at the end picks which saved offset to use.
+        String profile = null;
+        if (args.length >= 2 && args[args.length - 2].equals(PROFILE_FLAG)) {
+            profile = args[args.length - 1];
+            if (!isValidProfileName(profile)) {
+                System.out.println("Profile names use letters, numbers, - and _ only, got: " + profile);
+                return;
+            }
+            args = Arrays.copyOf(args, args.length - 2);
+        }
+
         if (args.length > 0 && args[0].equalsIgnoreCase("calibrate")) {
-            runCalibration(args);
+            runCalibration(args, profile);
             return;
         }
 
@@ -36,17 +49,15 @@ public class ThreeDFitter {
 
         double offsetMm;
         try {
-            offsetMm = loadOffset();
-        } catch (FileNotFoundException e) {
-            System.out.println("No " + OFFSET_FILE + " found, using offset 0. Run calibrate first for printer-corrected sizes.");
-            offsetMm = 0;
+            offsetMm = loadOffset(profile);
         } catch (IOException | NumberFormatException e) {
             System.out.println("Could not read " + OFFSET_FILE + ". Run calibrate again to rewrite it.");
             return;
         }
 
         String fitType = args[1].toLowerCase();
-        System.out.printf("3DFitter: %.3f mm, %s fit, printer offset %.3f mm%n", nominalSizeMm, fitType, offsetMm);
+        System.out.printf("3DFitter: %.3f mm, %s fit, %s, printer offset %.3f mm%n",
+                nominalSizeMm, fitType, profileLabel(profile), offsetMm);
         System.out.printf("Draw hole at: %.3f mm%n", cadHoleSize(holeSize(nominalSizeMm, gapMm), offsetMm));
         System.out.printf("Draw peg at:  %.3f mm%n", cadPegSize(pegSize(nominalSizeMm, gapMm), offsetMm));
     }
@@ -107,11 +118,12 @@ public class ThreeDFitter {
     static void printUsage() {
         System.out.println("Usage: java ThreeDFitter <size-mm> <fit-type>");
         System.out.println("       java ThreeDFitter calibrate <planned-mm> <measured-mm>");
+        System.out.println("Add --profile <name> to either command to keep a separate offset per printer or filament.");
         System.out.println("Fit types: press, snug, slide, loose");
     }
 
     // Calibration mode: compare a test hole's CAD size with its caliper measurement and save the offset.
-    static void runCalibration(String[] args) {
+    static void runCalibration(String[] args, String profile) {
         if (args.length != 3) {
             printUsage();
             return;
@@ -129,12 +141,12 @@ public class ThreeDFitter {
 
         double offsetMm = calculateOffset(plannedMm, measuredMm);
         try {
-            saveOffset(offsetMm);
+            saveOffset(offsetMm, profile);
         } catch (IOException e) {
             System.out.println("Could not save " + OFFSET_FILE + ": " + e.getMessage());
             return;
         }
-        System.out.printf("Saved offset %.3f mm to %s%n", offsetMm, OFFSET_FILE);
+        System.out.printf("Saved offset %.3f mm for %s to %s%n", offsetMm, profileLabel(profile), OFFSET_FILE);
     }
 
     // Negative means holes print smaller than drawn (10.00 drawn, 9.85 measured gives -0.15).
@@ -143,21 +155,54 @@ public class ThreeDFitter {
         return Math.round((measuredMm - plannedMm) * 1000) / 1000.0;
     }
 
-    static void saveOffset(double offsetMm) throws IOException {
-        Properties settings = new Properties();
-        settings.setProperty("offset", String.valueOf(offsetMm));
-        try (FileWriter writer = new FileWriter(OFFSET_FILE)) {
-            settings.store(writer, "3DFitter printer offset in mm (measured minus planned)");
-        }
+    static boolean isValidProfileName(String profile) {
+        return profile.matches("[A-Za-z0-9_-]+");
     }
 
-    static double loadOffset() throws IOException {
+    // No profile uses the plain "offset" key, so files saved before profiles existed still work.
+    static String offsetKey(String profile) {
+        if (profile == null) {
+            return "offset";
+        }
+        return "offset." + profile;
+    }
+
+    static String profileLabel(String profile) {
+        if (profile == null) {
+            return "default profile";
+        }
+        return "profile " + profile;
+    }
+
+    // Reads every saved offset. A missing file means nothing is calibrated yet, so it returns an empty set.
+    static Properties loadSettings() throws IOException {
         Properties settings = new Properties();
         try (FileReader reader = new FileReader(OFFSET_FILE)) {
             settings.load(reader);
+        } catch (FileNotFoundException e) {
+            return settings;
         }
-        // A missing key becomes "" so parseDouble throws NumberFormatException instead of crashing.
-        double offsetMm = Double.parseDouble(settings.getProperty("offset", ""));
+        return settings;
+    }
+
+    // Loads the existing file first so saving one profile keeps the offsets of the others.
+    static void saveOffset(double offsetMm, String profile) throws IOException {
+        Properties settings = loadSettings();
+        settings.setProperty(offsetKey(profile), String.valueOf(offsetMm));
+        try (FileWriter writer = new FileWriter(OFFSET_FILE)) {
+            settings.store(writer, "3DFitter printer offsets in mm (measured minus planned)");
+        }
+    }
+
+    static double loadOffset(String profile) throws IOException {
+        String value = loadSettings().getProperty(offsetKey(profile));
+        if (value == null) {
+            System.out.println("No saved offset for " + profileLabel(profile)
+                    + ", using 0. Run calibrate first for printer-corrected sizes.");
+            return 0;
+        }
+
+        double offsetMm = Double.parseDouble(value);
         if (!Double.isFinite(offsetMm)) {
             throw new NumberFormatException("offset is not a finite number");
         }
